@@ -1,4 +1,17 @@
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, index, decimal, unique, primaryKey } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  serial,
+  integer,
+  boolean,
+  timestamp,
+  varchar,
+  jsonb,
+  index,
+  decimal,
+  unique,
+  primaryKey,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -25,8 +38,8 @@ export const users = pgTable("users", {
   displayName: varchar("display_name"), // User-chosen display name for chat/activities
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role").notNull().default("volunteer"), // 'admin', 'coordinator', 'volunteer', 'viewer'
-  permissions: jsonb("permissions").default('[]'), // Array of specific permissions
-  metadata: jsonb("metadata").default('{}'), // Additional user data (phone, address, availability, etc.)
+  permissions: jsonb("permissions").default("[]"), // Array of specific permissions
+  metadata: jsonb("metadata").default("{}"), // Additional user data (phone, address, availability, etc.)
   isActive: boolean("is_active").notNull().default(true),
   lastLoginAt: timestamp("last_login_at"), // Track when user last logged in
   createdAt: timestamp("created_at").defaultNow(),
@@ -55,6 +68,7 @@ export const chatMessages = pgTable("chat_messages", {
   userId: varchar("user_id").notNull(),
   userName: varchar("user_name").notNull(),
   content: text("content").notNull(),
+  editedAt: timestamp("edited_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -67,7 +81,7 @@ export const projects = pgTable("projects", {
   category: text("category").notNull().default("general"), // 'general', 'marketing', 'operations', 'grants', 'events'
   assigneeId: integer("assignee_id"),
   assigneeName: text("assignee_name"),
-  assigneeIds: jsonb("assignee_ids").default('[]'), // Array of user IDs for multiple assignees
+  assigneeIds: jsonb("assignee_ids").default("[]"), // Array of user IDs for multiple assignees
   assigneeNames: text("assignee_names"), // Comma-separated names for multiple assignees
   dueDate: text("due_date"), // ISO date string
   startDate: text("start_date"), // ISO date string
@@ -115,16 +129,20 @@ export const projectComments = pgTable("project_comments", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const taskCompletions = pgTable("task_completions", {
-  id: serial("id").primaryKey(),
-  taskId: integer("task_id").notNull(),
-  userId: text("user_id").notNull(),
-  userName: text("user_name").notNull(),
-  completedAt: timestamp("completed_at").notNull().defaultNow(),
-  notes: text("notes"),
-}, (table) => ({
-  uniqueTaskUser: unique().on(table.taskId, table.userId),
-}));
+export const taskCompletions = pgTable(
+  "task_completions",
+  {
+    id: serial("id").primaryKey(),
+    taskId: integer("task_id").notNull(),
+    userId: text("user_id").notNull(),
+    userName: text("user_name").notNull(),
+    completedAt: timestamp("completed_at").notNull().defaultNow(),
+    notes: text("notes"),
+  },
+  (table) => ({
+    uniqueTaskUser: unique().on(table.taskId, table.userId),
+  }),
+);
 
 // User-project assignments for visibility control
 export const projectAssignments = pgTable("project_assignments", {
@@ -151,7 +169,7 @@ export const committeeMemberships = pgTable("committee_memberships", {
   userId: varchar("user_id").notNull(),
   committeeId: integer("committee_id").notNull(), // References committees.id
   role: varchar("role").notNull().default("member"), // 'chair', 'co-chair', 'member'
-  permissions: jsonb("permissions").default('[]'), // Specific committee permissions
+  permissions: jsonb("permissions").default("[]"), // Specific committee permissions
   joinedAt: timestamp("joined_at").defaultNow(),
   isActive: boolean("is_active").notNull().default(true),
 });
@@ -183,19 +201,29 @@ export const conversations = pgTable("conversations", {
 });
 
 // 2. Conversation participants - who's in each conversation
-export const conversationParticipants = pgTable("conversation_participants", {
-  conversationId: integer("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull(),
-  joinedAt: timestamp("joined_at").defaultNow(),
-  lastReadAt: timestamp("last_read_at").defaultNow(),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.conversationId, table.userId] }),
-}));
+export const conversationParticipants = pgTable(
+  "conversation_participants",
+  {
+    conversationId: integer("conversation_id").references(
+      () => conversations.id,
+      { onDelete: "cascade" },
+    ),
+    userId: text("user_id").notNull(),
+    joinedAt: timestamp("joined_at").defaultNow(),
+    lastReadAt: timestamp("last_read_at").defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.conversationId, table.userId] }),
+  }),
+);
 
 // 3. Messages - enhanced with contextual linking
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),
-  conversationId: integer("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
+  conversationId: integer("conversation_id").references(
+    () => conversations.id,
+    { onDelete: "cascade" },
+  ),
   userId: text("user_id").notNull(),
   senderId: text("sender_id").notNull(),
   content: text("content").notNull(),
@@ -211,49 +239,80 @@ export const messages = pgTable("messages", {
 });
 
 // 4. Message Recipients - track read status per recipient
-export const messageRecipients = pgTable("message_recipients", {
-  id: serial("id").primaryKey(),
-  messageId: integer("message_id").references(() => messages.id, { onDelete: "cascade" }),
-  recipientId: text("recipient_id").notNull(),
-  read: boolean("read").notNull().default(false),
-  readAt: timestamp("read_at"),
-  notificationSent: boolean("notification_sent").notNull().default(false),
-  emailSentAt: timestamp("email_sent_at"),
-  contextAccessRevoked: boolean("context_access_revoked").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
-}, (table) => ({
-  uniqueRecipient: unique().on(table.messageId, table.recipientId),
-  unreadIdx: index("idx_message_recipients_unread").on(table.recipientId, table.read),
-}));
+export const messageRecipients = pgTable(
+  "message_recipients",
+  {
+    id: serial("id").primaryKey(),
+    messageId: integer("message_id").references(() => messages.id, {
+      onDelete: "cascade",
+    }),
+    recipientId: text("recipient_id").notNull(),
+    read: boolean("read").notNull().default(false),
+    readAt: timestamp("read_at"),
+    notificationSent: boolean("notification_sent").notNull().default(false),
+    emailSentAt: timestamp("email_sent_at"),
+    contextAccessRevoked: boolean("context_access_revoked").default(false),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    uniqueRecipient: unique().on(table.messageId, table.recipientId),
+    unreadIdx: index("idx_message_recipients_unread").on(
+      table.recipientId,
+      table.read,
+    ),
+  }),
+);
 
 // 5. Message Threads - maintain threading hierarchy
-export const messageThreads = pgTable("message_threads", {
-  id: serial("id").primaryKey(),
-  rootMessageId: integer("root_message_id").references(() => messages.id, { onDelete: "cascade" }),
-  messageId: integer("message_id").references(() => messages.id, { onDelete: "cascade" }),
-  parentMessageId: integer("parent_message_id").references(() => messages.id, { onDelete: "cascade" }),
-  depth: integer("depth").notNull().default(0),
-  path: text("path").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-}, (table) => ({
-  uniqueMessage: unique().on(table.messageId),
-  pathIdx: index("idx_thread_path").on(table.path),
-}));
+export const messageThreads = pgTable(
+  "message_threads",
+  {
+    id: serial("id").primaryKey(),
+    rootMessageId: integer("root_message_id").references(() => messages.id, {
+      onDelete: "cascade",
+    }),
+    messageId: integer("message_id").references(() => messages.id, {
+      onDelete: "cascade",
+    }),
+    parentMessageId: integer("parent_message_id").references(
+      () => messages.id,
+      { onDelete: "cascade" },
+    ),
+    depth: integer("depth").notNull().default(0),
+    path: text("path").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    uniqueMessage: unique().on(table.messageId),
+    pathIdx: index("idx_thread_path").on(table.path),
+  }),
+);
 
 // 6. Kudos Tracking - prevent spam by tracking sent kudos
-export const kudosTracking = pgTable("kudos_tracking", {
-  id: serial("id").primaryKey(),
-  senderId: text("sender_id").notNull(),
-  recipientId: text("recipient_id").notNull(),
-  contextType: text("context_type").notNull(), // 'project' or 'task'
-  contextId: text("context_id").notNull(),
-  messageId: integer("message_id").references(() => messages.id, { onDelete: "cascade" }),
-  sentAt: timestamp("sent_at").defaultNow(),
-}, (table) => ({
-  // Ensure one kudos per sender-recipient-context combination
-  uniqueKudos: unique().on(table.senderId, table.recipientId, table.contextType, table.contextId),
-  senderIdx: index("idx_kudos_sender").on(table.senderId),
-}));
+export const kudosTracking = pgTable(
+  "kudos_tracking",
+  {
+    id: serial("id").primaryKey(),
+    senderId: text("sender_id").notNull(),
+    recipientId: text("recipient_id").notNull(),
+    contextType: text("context_type").notNull(), // 'project' or 'task'
+    contextId: text("context_id").notNull(),
+    messageId: integer("message_id").references(() => messages.id, {
+      onDelete: "cascade",
+    }),
+    sentAt: timestamp("sent_at").defaultNow(),
+  },
+  (table) => ({
+    // Ensure one kudos per sender-recipient-context combination
+    uniqueKudos: unique().on(
+      table.senderId,
+      table.recipientId,
+      table.contextType,
+      table.contextId,
+    ),
+    senderIdx: index("idx_kudos_sender").on(table.senderId),
+  }),
+);
 
 // All complex messaging tables removed - using enhanced messaging system above
 
@@ -405,32 +464,93 @@ export const projectDocuments = pgTable("project_documents", {
 });
 
 // Insert schemas
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertProjectSchema = createInsertSchema(projects).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertMessageRecipientSchema = createInsertSchema(messageRecipients).omit({ id: true, createdAt: true });
-export const insertMessageThreadSchema = createInsertSchema(messageThreads).omit({ id: true, createdAt: true });
-export const insertKudosTrackingSchema = createInsertSchema(kudosTracking).omit({ id: true, sentAt: true });
-export const insertWeeklyReportSchema = createInsertSchema(weeklyReports).omit({ id: true, submittedAt: true });
-export const insertSandwichCollectionSchema = createInsertSchema(sandwichCollections).omit({ id: true, submittedAt: true });
-export const insertMeetingMinutesSchema = createInsertSchema(meetingMinutes).omit({ id: true });
-export const insertDriveLinkSchema = createInsertSchema(driveLinks).omit({ id: true });
-export const insertAgendaItemSchema = createInsertSchema(agendaItems).omit({ id: true, submittedAt: true });
-export const insertMeetingSchema = createInsertSchema(meetings).omit({ id: true, createdAt: true });
-export const insertDriverAgreementSchema = createInsertSchema(driverAgreements).omit({ id: true, submittedAt: true });
-export const insertHostSchema = createInsertSchema(hosts).omit({ id: true, createdAt: true, updatedAt: true }).extend({
-  name: z.string().min(1, "Host name is required").trim().refine(
-    (name) => name.length > 0,
-    "Host name cannot be empty or just whitespace"
-  ),
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
 });
-export const insertHostContactSchema = createInsertSchema(hostContacts).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertRecipientSchema = createInsertSchema(recipients).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertProjectDocumentSchema = createInsertSchema(projectDocuments).omit({ id: true, uploadedAt: true });
-export const insertProjectTaskSchema = createInsertSchema(projectTasks).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertProjectCommentSchema = createInsertSchema(projectComments).omit({ id: true, createdAt: true });
-export const insertProjectAssignmentSchema = createInsertSchema(projectAssignments).omit({ id: true, assignedAt: true });
-export const insertTaskCompletionSchema = createInsertSchema(taskCompletions).omit({ id: true, completedAt: true });
+export const insertProjectSchema = createInsertSchema(projects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMessageSchema = createInsertSchema(messages).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertMessageRecipientSchema = createInsertSchema(
+  messageRecipients,
+).omit({ id: true, createdAt: true });
+export const insertMessageThreadSchema = createInsertSchema(
+  messageThreads,
+).omit({ id: true, createdAt: true });
+export const insertKudosTrackingSchema = createInsertSchema(kudosTracking).omit(
+  { id: true, sentAt: true },
+);
+export const insertWeeklyReportSchema = createInsertSchema(weeklyReports).omit({
+  id: true,
+  submittedAt: true,
+});
+export const insertSandwichCollectionSchema = createInsertSchema(
+  sandwichCollections,
+).omit({ id: true, submittedAt: true });
+export const insertMeetingMinutesSchema = createInsertSchema(
+  meetingMinutes,
+).omit({ id: true });
+export const insertDriveLinkSchema = createInsertSchema(driveLinks).omit({
+  id: true,
+});
+export const insertAgendaItemSchema = createInsertSchema(agendaItems).omit({
+  id: true,
+  submittedAt: true,
+});
+export const insertMeetingSchema = createInsertSchema(meetings).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertDriverAgreementSchema = createInsertSchema(
+  driverAgreements,
+).omit({ id: true, submittedAt: true });
+export const insertHostSchema = createInsertSchema(hosts)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    name: z
+      .string()
+      .min(1, "Host name is required")
+      .trim()
+      .refine(
+        (name) => name.length > 0,
+        "Host name cannot be empty or just whitespace",
+      ),
+  });
+export const insertHostContactSchema = createInsertSchema(hostContacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertRecipientSchema = createInsertSchema(recipients).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertProjectDocumentSchema = createInsertSchema(
+  projectDocuments,
+).omit({ id: true, uploadedAt: true });
+export const insertProjectTaskSchema = createInsertSchema(projectTasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertProjectCommentSchema = createInsertSchema(
+  projectComments,
+).omit({ id: true, createdAt: true });
+export const insertProjectAssignmentSchema = createInsertSchema(
+  projectAssignments,
+).omit({ id: true, assignedAt: true });
+export const insertTaskCompletionSchema = createInsertSchema(
+  taskCompletions,
+).omit({ id: true, completedAt: true });
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -441,7 +561,9 @@ export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type MessageRecipient = typeof messageRecipients.$inferSelect;
-export type InsertMessageRecipient = z.infer<typeof insertMessageRecipientSchema>;
+export type InsertMessageRecipient = z.infer<
+  typeof insertMessageRecipientSchema
+>;
 export type MessageThread = typeof messageThreads.$inferSelect;
 export type InsertMessageThread = z.infer<typeof insertMessageThreadSchema>;
 export type KudosTracking = typeof kudosTracking.$inferSelect;
@@ -449,7 +571,9 @@ export type InsertKudosTracking = z.infer<typeof insertKudosTrackingSchema>;
 export type WeeklyReport = typeof weeklyReports.$inferSelect;
 export type InsertWeeklyReport = z.infer<typeof insertWeeklyReportSchema>;
 export type SandwichCollection = typeof sandwichCollections.$inferSelect;
-export type InsertSandwichCollection = z.infer<typeof insertSandwichCollectionSchema>;
+export type InsertSandwichCollection = z.infer<
+  typeof insertSandwichCollectionSchema
+>;
 export type MeetingMinutes = typeof meetingMinutes.$inferSelect;
 export type InsertMeetingMinutes = z.infer<typeof insertMeetingMinutesSchema>;
 export type DriveLink = typeof driveLinks.$inferSelect;
@@ -473,7 +597,9 @@ export type InsertProjectTask = z.infer<typeof insertProjectTaskSchema>;
 export type ProjectComment = typeof projectComments.$inferSelect;
 export type InsertProjectComment = z.infer<typeof insertProjectCommentSchema>;
 export type ProjectAssignment = typeof projectAssignments.$inferSelect;
-export type InsertProjectAssignment = z.infer<typeof insertProjectAssignmentSchema>;
+export type InsertProjectAssignment = z.infer<
+  typeof insertProjectAssignmentSchema
+>;
 export type TaskCompletion = typeof taskCompletions.$inferSelect;
 export type InsertTaskCompletion = z.infer<typeof insertTaskCompletionSchema>;
 
@@ -492,14 +618,14 @@ export const hostedFiles = pgTable("hosted_files", {
   isPublic: boolean("is_public").notNull().default(true),
   downloadCount: integer("download_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const insertHostedFileSchema = createInsertSchema(hostedFiles).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-  downloadCount: true
+  downloadCount: true,
 });
 
 export type HostedFile = typeof hostedFiles.$inferSelect;
@@ -518,13 +644,13 @@ export const contacts = pgTable("contacts", {
   category: text("category").notNull().default("general"), // volunteer, board, vendor, donor, etc.
   status: text("status").notNull().default("active"), // active, inactive
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const insertContactSchema = createInsertSchema(contacts).omit({
   id: true,
   createdAt: true,
-  updatedAt: true
+  updatedAt: true,
 });
 
 export type Contact = typeof contacts.$inferSelect;
@@ -533,7 +659,7 @@ export type InsertContact = z.infer<typeof insertContactSchema>;
 // Audit log types
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   id: true,
-  timestamp: true
+  timestamp: true,
 });
 
 export type AuditLog = typeof auditLogs.$inferSelect;
@@ -541,7 +667,7 @@ export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 
 // Driver types
 export const insertDriverSchema = createInsertSchema(drivers).omit({
-  id: true
+  id: true,
 });
 
 export type Driver = typeof drivers.$inferSelect;
@@ -563,7 +689,7 @@ export const notifications = pgTable("notifications", {
 
 export const insertNotificationSchema = createInsertSchema(notifications).omit({
   id: true,
-  createdAt: true
+  createdAt: true,
 });
 
 export type Notification = typeof notifications.$inferSelect;
@@ -572,25 +698,29 @@ export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 // Committee schema types
 export const insertCommitteeSchema = createInsertSchema(committees).omit({
   createdAt: true,
-  updatedAt: true
+  updatedAt: true,
 });
 
 export type Committee = typeof committees.$inferSelect;
 export type InsertCommittee = z.infer<typeof insertCommitteeSchema>;
 
-export const insertCommitteeMembershipSchema = createInsertSchema(committeeMemberships).omit({
+export const insertCommitteeMembershipSchema = createInsertSchema(
+  committeeMemberships,
+).omit({
   id: true,
-  joinedAt: true
+  joinedAt: true,
 });
 
 export type CommitteeMembership = typeof committeeMemberships.$inferSelect;
-export type InsertCommitteeMembership = z.infer<typeof insertCommitteeMembershipSchema>;
+export type InsertCommitteeMembership = z.infer<
+  typeof insertCommitteeMembershipSchema
+>;
 
 // Announcement schema types
 export const insertAnnouncementSchema = createInsertSchema(announcements).omit({
   id: true,
   createdAt: true,
-  updatedAt: true
+  updatedAt: true,
 });
 
 export type Announcement = typeof announcements.$inferSelect;
@@ -599,18 +729,23 @@ export type InsertAnnouncement = z.infer<typeof insertAnnouncementSchema>;
 // Simple messaging schema types
 export const insertConversationSchema = createInsertSchema(conversations).omit({
   id: true,
-  createdAt: true
+  createdAt: true,
 });
 
-export const insertConversationParticipantSchema = createInsertSchema(conversationParticipants).omit({
+export const insertConversationParticipantSchema = createInsertSchema(
+  conversationParticipants,
+).omit({
   joinedAt: true,
-  lastReadAt: true
+  lastReadAt: true,
 });
 
 export type Conversation = typeof conversations.$inferSelect;
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
-export type ConversationParticipant = typeof conversationParticipants.$inferSelect;
-export type InsertConversationParticipant = z.infer<typeof insertConversationParticipantSchema>;
+export type ConversationParticipant =
+  typeof conversationParticipants.$inferSelect;
+export type InsertConversationParticipant = z.infer<
+  typeof insertConversationParticipantSchema
+>;
 
 // Google Sheets integration table
 export const googleSheets = pgTable("google_sheets", {
@@ -632,7 +767,7 @@ export const insertGoogleSheetSchema = createInsertSchema(googleSheets).omit({
   directUrl: true,
   createdBy: true,
   createdAt: true,
-  updatedAt: true
+  updatedAt: true,
 });
 
 export type GoogleSheet = typeof googleSheets.$inferSelect;
@@ -641,13 +776,13 @@ export type InsertGoogleSheet = z.infer<typeof insertGoogleSheetSchema>;
 // OLD COMPLEX MESSAGING TABLES REMOVED - Using simple 3-table system only
 // The following tables were part of the old 7-table messaging system:
 // - conversationThreads
-// - messageGroups  
+// - messageGroups
 // - groupMemberships
 // - groupMessageParticipants
-// 
+//
 // These have been replaced by the simple 3-table system:
 // - conversations
-// - conversationParticipants  
+// - conversationParticipants
 // - messages
 
 export const workLogs = pgTable("work_logs", {
@@ -663,7 +798,7 @@ export const workLogs = pgTable("work_logs", {
   visibility: varchar("visibility", { length: 20 }).default("private"), // "private", "team", "department", "public"
   sharedWith: jsonb("shared_with").$type<string[]>().default([]), // specific user IDs who can view
   department: varchar("department", { length: 50 }), // for department-based visibility
-  teamId: varchar("team_id") // for team-based visibility
+  teamId: varchar("team_id"), // for team-based visibility
 });
 
 export type WorkLog = typeof workLogs.$inferSelect;
@@ -712,15 +847,19 @@ export const insertSuggestionSchema = createInsertSchema(suggestions).omit({
   completedAt: true,
   submittedBy: true,
   submitterEmail: true,
-  submitterName: true
+  submitterName: true,
 });
 
-export const insertSuggestionResponseSchema = createInsertSchema(suggestionResponses).omit({
+export const insertSuggestionResponseSchema = createInsertSchema(
+  suggestionResponses,
+).omit({
   id: true,
-  createdAt: true
+  createdAt: true,
 });
 
 export type Suggestion = typeof suggestions.$inferSelect;
 export type InsertSuggestion = z.infer<typeof insertSuggestionSchema>;
 export type SuggestionResponse = typeof suggestionResponses.$inferSelect;
-export type InsertSuggestionResponse = z.infer<typeof insertSuggestionResponseSchema>;
+export type InsertSuggestionResponse = z.infer<
+  typeof insertSuggestionResponseSchema
+>;
